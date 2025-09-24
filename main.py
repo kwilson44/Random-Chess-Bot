@@ -28,7 +28,6 @@ def main():
         board = chess.Board(fen)
     else:
         board = chess.Board()
-    print(board)
 
     #main while loop for the game
     while not board.is_game_over():
@@ -50,18 +49,19 @@ def main():
             else: 
                 print(f"Bot (as black): {move.uci()}")
 
-        #player move
-            user_move = input("Your move: ").strip() # ADD ERROR HANDLING HERE!
-            move = chess.Move.from_uci(user_move)
-            try: 
+        else:
+            #player's move
+            user_move = input("Your move: ").strip()
+            try:
+                move = chess.Move.from_uci(user_move)
                 if move in board.legal_moves:
                     board.push(move)
                 else:
                     print("Invalid move, try again.")
-                continue
+                    continue
             except:
                 print("Invalid input")
-
+                continue
 
         print(board)
         print("New FEN position", board.fen())
