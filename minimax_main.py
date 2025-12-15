@@ -2,6 +2,7 @@ import chess
 from datetime import datetime
 import random
 import sys
+import time
 
 class ChessGameError(Exception):
     """Custom exception for chess game errors"""
@@ -19,18 +20,69 @@ PIECE_VALUES = {
 
 CENTER_SQUARES = [chess.E4, chess.E5, chess.D4, chess.D5]
 
+# Transposition table for caching positions: maps (fen, depth) -> (score, best_move)
+TRANSPOSITION_TABLE = {}
+
+# Simple opening lines (UCI sequences) for aggressive/famous openings.
+# These are short illustrative lines for King's Gambit, Sicilian Dragon, Evans Gambit, Dutch Defense.
+OPENING_LINES = [
+    # King's Gambit (White): 1. e4 e5 2. f4
+    ["e2e4", "e7e5", "f2f4"],
+    # Sicilian Dragon (Black sequence shown as full line starting from white e4)
+    ["e2e4", "c7c5", "g1f3", "d7d6", "d2d4", "c5d4", "f3d4", "g7g6"],
+    # Evans Gambit (White): 1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.b4
+    ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "b2b4"],
+    # Dutch Defense (Black): 1.d4 f5
+    ["d2d4", "f7f5"]
+]
+
+
+def select_opening_move(board):
+    """If current move history matches a known opening prefix, return the next book move (Move) if legal.
+
+    Only used in early game (short move stacks).
+    """
+    # Only consider openings in early midgame (up to 8 plies)
+    ply = len(board.move_stack)
+    if ply > 8:
+        return None
+
+    played = [m.uci() for m in board.move_stack]
+
+    for line in OPENING_LINES:
+        if len(played) <= len(line) and played == line[:len(played)]:
+            # next move in line
+            if len(played) < len(line):
+                next_uci = line[len(played)]
+                move = chess.Move.from_uci(next_uci)
+                if move in board.legal_moves:
+                    return move
+    return None
+
 def order_moves(board, moves):
     """Order moves for better alpha-beta pruning efficiency"""
     def move_score(move):
         score = 0
-        # Prioritize captures
+        # Prioritize transposition table's best move
+        key = board.fen()
+        tt_entry = TRANSPOSITION_TABLE.get((key, 0))
+        if tt_entry and tt_entry[1] == move:
+            score += 10000
+
+        # MVV-LVA for captures (Most Valuable Victim - Least Valuable Attacker)
         if board.is_capture(move):
             captured = board.piece_at(move.to_square)
-            if captured:
-                score += PIECE_VALUES[captured.piece_type]
-        # Prioritize center control        
+            attacker = board.piece_at(move.from_square)
+            if captured and attacker:
+                # higher is better: give big bonus for capturing valuable pieces
+                score += 1000 + PIECE_VALUES[captured.piece_type] - PIECE_VALUES[attacker.piece_type]
+
+        # Prioritize center control
         if move.to_square in CENTER_SQUARES:
             score += 50
+
+        # Small randomizer to avoid deterministic ties
+        score += random.randint(0, 5)
         return score
     
     return sorted(moves, key=move_score, reverse=True)
@@ -40,7 +92,7 @@ STALEMATE_SCORE = 0
 
 def print_header():
     print("=====================================================")
-    print("             CS 290 Chess Bot Version 0.2")
+    print("             CS 290 Chess Bot Evil Edition")
     print("                  With Minimax!")
     print("=====================================================")
     print(f"Time: {datetime.now()}")
@@ -158,44 +210,82 @@ def evaluate_position(board):
     
     return score
 
+def quiescence(board, alpha, beta):
+    """Simple quiescence search: only examine captures to avoid horizon effect."""
+    stand_pat = evaluate_position(board)
+    if stand_pat >= beta:
+        return beta
+    if alpha < stand_pat:
+        alpha = stand_pat
+
+    # consider capture moves only
+    for move in order_moves(board, [m for m in board.legal_moves if board.is_capture(m)]):
+        board.push(move)
+        score = -quiescence(board, -beta, -alpha)
+        board.pop()
+
+        if score >= beta:
+            return beta
+        if score > alpha:
+            alpha = score
+
+    return alpha
+
+
 def minimax(board, depth, alpha, beta, is_maximizing):
-    """Enhanced minimax (with alpha-beta pruning and move ordering for a lil kick)"""
+    """Minimax with alpha-beta, transposition table and quiescence."""
+    key = board.fen()
+    tt_key = (key, depth)
+
+    # Transposition table lookup
+    if tt_key in TRANSPOSITION_TABLE:
+        return TRANSPOSITION_TABLE[tt_key]
+
     if depth == 0 or board.is_game_over():
-        return evaluate_position(board), None
-        
-    # Use move ordering for better pruning
+        if board.is_game_over():
+            val = evaluate_position(board)
+            TRANSPOSITION_TABLE[tt_key] = (val, None)
+            return val, None
+        # quiescence search at leaf
+        q = quiescence(board, alpha, beta)
+        TRANSPOSITION_TABLE[tt_key] = (q, None)
+        return q, None
+
     legal_moves = order_moves(board, list(board.legal_moves))
-    
+
+    best_move = None
     if is_maximizing:
-        best_score = float('-inf')
-        best_move = None
+        value = float('-inf')
         for move in legal_moves:
             board.push(move)
-            score, _ = minimax(board, depth-1, alpha, beta, False)
+            score, _ = minimax(board, depth-1, -beta, -alpha, False)
+            score = -score
             board.pop()
-            
-            if score > best_score:
-                best_score = score
+
+            if score > value:
+                value = score
                 best_move = move
             alpha = max(alpha, score)
-            if beta <= alpha:
+            if alpha >= beta:
                 break
-        return best_score, best_move
+        TRANSPOSITION_TABLE[tt_key] = (value, best_move)
+        return value, best_move
     else:
-        best_score = float('inf')
-        best_move = None
+        value = float('inf')
         for move in legal_moves:
             board.push(move)
-            score, _ = minimax(board, depth-1, alpha, beta, True)
+            score, _ = minimax(board, depth-1, -beta, -alpha, True)
+            score = -score
             board.pop()
-            
-            if score < best_score:
-                best_score = score
+
+            if score < value:
+                value = score
                 best_move = move
             beta = min(beta, score)
-            if beta <= alpha:
+            if alpha >= beta:
                 break
-        return best_score, best_move
+        TRANSPOSITION_TABLE[tt_key] = (value, best_move)
+        return value, best_move
 
 def get_bot_move(board, use_minimax=True, depth=2):
     """
@@ -210,7 +300,12 @@ def get_bot_move(board, use_minimax=True, depth=2):
         legal_moves = list(board.legal_moves)
         if not legal_moves:
             raise ChessGameError("No legal moves available - game is over")
-        
+        # Try opening book first (only in early game)
+        opening_move = select_opening_move(board)
+        if opening_move:
+            print("Using opening book move")
+            return opening_move
+
         if use_minimax:
             print(f"Bot thinking (depth {depth})...")
             computer_color = board.turn
