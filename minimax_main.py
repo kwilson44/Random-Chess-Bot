@@ -3,6 +3,7 @@ from datetime import datetime
 import random
 import sys
 import time
+import unittest
 
 class ChessGameError(Exception):
     """Custom exception for chess game errors"""
@@ -398,5 +399,44 @@ def main():
         print(f"Fatal error: {str(e)}")
         sys.exit(1)
 
+
+#Test cases for opening move functionality
+    #To test: python minimax_main.py --test
+class TestOpeningBook(unittest.TestCase):
+
+    def setUp(self):
+        self.board = chess.Board()
+
+    def test_opening_from_start(self):
+        move = select_opening_move(self.board)
+        self.assertIsNotNone(move)
+        self.assertIn(move, self.board.legal_moves)
+
+    def test_kings_gambit_continuation(self):
+        self.board.push_uci("e2e4")
+        self.board.push_uci("e7e5")
+
+        move = select_opening_move(self.board)
+        self.assertIsNotNone(move)
+        if move:
+            self.assertEqual(move.uci(), "f2f4")
+
+    def test_no_opening_after_cutoff(self):
+        moves = [
+            "e2e4", "e7e5", "g1f3", "b8c6",
+            "f1c4", "f8c5", "c2c3", "g8f6", "d2d4"
+        ]
+        for m in moves:
+            self.board.push_uci(m)
+
+        self.assertIsNone(select_opening_move(self.board))
+
+    def test_invalid_opening_prefix(self):
+        self.board.push_uci("a2a4")
+        self.assertIsNone(select_opening_move(self.board))
+
 if __name__ == "__main__":
-    main()
+    if "--test" in sys.argv:
+        unittest.main(argv=[sys.argv[0]])
+    else:
+        main()
