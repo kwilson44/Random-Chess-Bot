@@ -24,18 +24,19 @@ CENTER_SQUARES = [chess.E4, chess.E5, chess.D4, chess.D5]
 TRANSPOSITION_TABLE = {}
 
 # Simple opening lines (UCI sequences) for aggressive/famous openings.
-# These are short illustrative lines for King's Gambit, Sicilian Dragon, Evans Gambit, Dutch Defense.
-OPENING_LINES = [
-    # King's Gambit (White): 1. e4 e5 2. f4
-    ["e2e4", "e7e5", "f2f4"],
-    # Sicilian Dragon (Black sequence shown as full line starting from white e4)
-    ["e2e4", "c7c5", "g1f3", "d7d6", "d2d4", "c5d4", "f3d4", "g7g6"],
-    # Evans Gambit (White): 1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.b4
-    ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "b2b4"],
-    # Dutch Defense (Black): 1.d4 f5
-    ["d2d4", "f7f5"]
-]
-
+OPENING_LINES = {
+    chess.WHITE: [
+        ["e2e4", "e7e5", "f2f4"],        # King's Gambit
+        ["e2e4", "e7e5", "d2d4"],        # Center Game
+        ["e2e4", "c7c5", "d2d4"],        # Smith-Morra
+        ["e2e4", "e7e5", "b1c3", "f2f4"] # Vienna Gambit
+    ],
+    chess.BLACK: [
+        ["e2e4", "d7d5"],                # Scandinavian
+        ["e2e4", "e7e5", "g1f3", "f7f5"],# Latvian
+        ["d2d4", "g8f6", "c2c4", "c7c5"] # Benoni
+    ]
+}
 
 def select_opening_move(board):
     """If current move history matches a known opening prefix, return the next book move (Move) if legal.
@@ -49,7 +50,8 @@ def select_opening_move(board):
 
     played = [m.uci() for m in board.move_stack]
 
-    for line in OPENING_LINES:
+    lines = OPENING_LINES.get(board.turn, [])
+    for line in lines:
         if len(played) <= len(line) and played == line[:len(played)]:
             # next move in line
             if len(played) < len(line):
