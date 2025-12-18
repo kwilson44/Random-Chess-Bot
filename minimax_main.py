@@ -289,7 +289,7 @@ def minimax(board, depth, alpha, beta, is_maximizing):
         TRANSPOSITION_TABLE[tt_key] = (value, best_move)
         return value, best_move
 
-def get_bot_move(board, use_minimax=True, depth=2):
+def get_bot_move(board, use_minimax=True, depth=2, evil_mode=True):
     """
     Get bot move using minimax algorithm or fallback to random/capture.
     
@@ -303,10 +303,11 @@ def get_bot_move(board, use_minimax=True, depth=2):
         if not legal_moves:
             raise ChessGameError("No legal moves available - game is over")
         # Try opening book first (only in early game)
-        opening_move = select_opening_move(board)
-        if opening_move:
-            print("Using opening book move")
-            return opening_move
+        if evil_mode:  
+            opening_move = select_opening_move(board)
+            if opening_move:
+                print("Using opening book move")
+                return opening_move
 
         if use_minimax:
             print(f"Bot thinking (depth {depth})...")
@@ -347,6 +348,10 @@ def main():
         # Ask/prompts to see if user wants to use minimax
         use_minimax_input = input("Use minimax? (y/n, default=y): ").strip().lower()
         use_minimax = use_minimax_input != 'n'
+
+        if use_minimax: 
+            evil_mode = input("Evil mode? (y/n, default=n): ").strip().lower() == 'y'
+            evil_mode = evil_mode != 'n'
         
         depth = 2
         if use_minimax:
@@ -367,7 +372,7 @@ def main():
             if (board.turn == chess.WHITE and computer_color == 'w') or \
                (board.turn == chess.BLACK and computer_color == 'b'):
                 try:
-                    move = get_bot_move(board, use_minimax, depth)
+                    move = get_bot_move(board, use_minimax, depth, evil_mode)
                     print(f"Bot (as {'white' if board.turn == chess.WHITE else 'black'}): {move.uci()}")
                     board.push(move)
                     print(f"New FEN position: {board.fen()}")
